@@ -1,0 +1,10 @@
+---
+
+# This playbook deploys a fully functional Satellite 6 server on localhost machine
+
+- hosts: satellite6
+  remote_user: root
+  
+
+  roles:
+    - satellite6-server

@@ -1,0 +1,74 @@
+---
+ vars_prompt:
+   - name: "rhn_username"
+      prompt: "Enter Red Hat Network username:"
+   - name: "rhn_password"
+      prompt: "Enter Red Hat Networt password:"
+      private: yes
+   - name: "proxy_hostname"
+     prompt: "If behind a proxy, what is the proxy hostname:"
+   - name: "proxy_port"
+     prompt: "If behind a proxy, what is the proxy port:"
+   - name: "proxy_user"
+     prompt: "If behind a proxy, what is the proxy user:"
+   - name: "proxy_password"
+     prompt: "If behind a proxy, what is the proxy password:"
+     private: yes
+   - name: "initial_organization"
+     prompt: "Foreman initial_organization(Default Organization):"
+     default: "Default Organization"
+   - name: "initial_location"
+     prompt: "Foreman initial_location(Default Location):"
+     default: "Default Location"
+   - name: "admin_username"
+     prompt: "Foreman admin_username(admin):"
+     default: "admin"
+   - name: "admin_password"
+     prompt: "Foreman admin_password(admin123):"
+     default: "admin123"
+   - name:"enable_tftp"
+     prompt: "Enable capsule tftp server on {{ ansible_nodename }}(true,false):"
+     default: true
+      
+ vars:
+     katello_proxy: "http://{{proxy_hostname}}/"
+     
+   
+    
+ tasks:
+  - name: Deploying rhsm.conf file
+    template: src=rhsm.conf dest=/etc/rhsm/
+
+  - name: Registering "{{ ansible_nodename }}" to Red Hat Network with username {{ rhn_username }}
+    redhat_subscription: state=present
+			 username="{{rhn_username}}"
+                         password="{{rhn_password}}"
+                         pool='^Red Hat Satellite'
+
+  - name: Opening Satellite 6 needed iptables ports(RHEL 6)
+    script: /etc/ansible/roles/satellite6-server/files/iptables.sh 
+    when: (ansible_distribution == "RedHat" and ansible_distribution_major_version == "6")
+
+  - name: Opening Satellite 6 needed firewalld ports(RHEL 7)
+    script: /etc/ansible/roles/satellite6-server/files/firewalld.sh 
+    when: (ansible_distribution == "RedHat" and ansible_distribution_major_version == "7")
+
+  - name: Checking if selinux is enabled
+    command: getenforce
+    register: selinux_state
+ 
+  - name: Setting Selinux for Foreman proxy port
+    command: semanage -m -t foreman_proxy_port_t -p tcp 8080
+    when: "{{selinux_state}}" == "Enforcing"
+
+  - name: Installing the katello-instsaller package
+    yum: name=katello state=present
+
+  - name: Setting answer_file variable to ansible-katello-answers.yaml
+    command: sed -i '/answer_file/s/answers.katello-installer.yaml/ansible-katello-answers.yaml/' /etc/katello-installer/katello-installer.yaml
+
+  - name: Copying Ansible generated katello installer answer file to "{{ ansible_nodename }}"
+    template: src=ansible-katello-answers.yaml dest=/etc/katello-installer/
+
+  - name: Running katello-installer using ansible-katello-answers.yaml
+    command: katello-installer 
